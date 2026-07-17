@@ -1,6 +1,23 @@
 <!DOCTYPE html>
 <!-- ============================================================
-     Dell Linked  ·  VERSION 10  ·  2026-07-17
+     Dell Linked  ·  VERSION 11  ·  2026-07-17
+     v11: MESSAGES ARE DELETEABLE (permanent, hard delete).
+       - Each of YOUR OWN sent messages shows a "Delete" control in its
+         timestamp row. Deleting removes the Firestore /messages doc
+         outright -- no archive, no "recently deleted", no soft-delete
+         flag. It's gone for both people in the chat, immediately, via
+         the existing onSnapshot listener (subscribeMessages re-renders).
+       - confirm() gate before deletion since it can't be undone.
+       - You can only delete messages YOU sent, matched on doc.from ==
+         your uid. The other person's messages are not deletable by you
+         (and the rule below wouldn't allow it anyway).
+       - *** REQUIRES A FIRESTORE RULES UPDATE *** (first since v7).
+         Inside the existing `match /messages/{id}` block, add:
+           allow delete: if request.auth != null
+                         && request.auth.uid == resource.data.from;
+         `deleteDoc`/`doc` were already on the fb SDK object (since v7),
+         so no initLive() change was needed.
+       - No config, scoring, layout, or non-messaging behaviour changed.
      v10: HOTFIX -- v9 BROKE SIGN-IN. Do not ship v9.
        - Cause: fmtAgo() was defined *inside* the Delliberate block even
          though the Inbox also uses it. The v9 rewrite replaced that whole
@@ -100,7 +117,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="app-version" content="10">
+<meta name="app-version" content="11">
 <title>Dell Linked</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -443,6 +460,8 @@
   .bubble.them{background:var(--surface);border:1px solid var(--line);align-self:flex-start;border-bottom-left-radius:4px}
   .bubble.me{background:var(--blue);color:#fff;align-self:flex-end;border-bottom-right-radius:4px}
   .bubble .bt{font-size:10px;opacity:.65;margin-top:3px;text-align:right}
+  .bubble .bt .del-msg{cursor:pointer;margin-right:9px;text-decoration:underline;padding:2px 0}
+  .bubble .bt .del-msg:hover{opacity:1;text-decoration:none}
   .thread-empty{margin:auto;color:var(--muted);font-size:13.5px;text-align:center;padding:20px;line-height:1.6}
   .thread-compose{display:flex;gap:8px;padding:12px 14px;border-top:1px solid var(--line)}
   .thread-compose input{flex:1;padding:11px 14px}
@@ -675,7 +694,7 @@
   </div>
 </div>
 
-<div class="foot"><span class="pill">Dell Linked</span><span class="pill">Version 10</span><span class="pill" id="mode-pill">Local mode · offline</span></div>
+<div class="foot"><span class="pill">Dell Linked</span><span class="pill">Version 11</span><span class="pill" id="mode-pill">Local mode · offline</span></div>
 
 <script>
 const $=id=>document.getElementById(id);
@@ -1577,12 +1596,13 @@ function renderThread(){
   th.innerHTML='<div class="thread-head"><button class="back" id="chat-back">‹</button><div class="avatar" style="width:32px;height:32px;font-size:12px">'+initials(activeChatName)+'</div><div class="tnm">'+escapeHtml(activeChatName)+'</div></div><div class="thread-body" id="thread-body"></div><div class="thread-compose"><input type="text" id="chat-input" placeholder="Write a message…"><button class="btn" id="chat-send">Send</button></div>';
   const body=$('thread-body');
   if(msgs.length===0){body.innerHTML='<div class="thread-empty">No messages yet. Say hello to '+escapeHtml(activeChatName.split(' ')[0])+'.</div>'}
-  else msgs.forEach(m=>{const mine=m.from===currentUid;const d=document.createElement('div');d.className='bubble '+(mine?'me':'them');d.innerHTML=escapeHtml(m.text)+'<div class="bt">'+(m.ts?fmtAgo(tsMs(m.ts)):'sending…')+'</div>';body.appendChild(d)});
+  else msgs.forEach(m=>{const mine=m.from===currentUid;const d=document.createElement('div');d.className='bubble '+(mine?'me':'them');const canDel=mine&&m.id&&m.ts;const stamp=m.ts?fmtAgo(tsMs(m.ts)):'sending…';d.innerHTML=escapeHtml(m.text)+'<div class="bt">'+(canDel?'<span class="del-msg" title="Delete permanently">Delete</span>':'')+stamp+'</div>';if(canDel){const db=d.querySelector('.del-msg');db.onclick=()=>deleteMessage(m.id)}body.appendChild(d)});
   body.scrollTop=body.scrollHeight;
   $('chat-back').onclick=()=>{const cw=$('chat-wrap');if(cw)cw.classList.remove('thread-open');updateInboxBadge()};
   const input=$('chat-input');$('chat-send').onclick=()=>sendMessage(input);input.addEventListener('keydown',e=>{if(e.key==='Enter')sendMessage(input)});input.focus();
 }
 async function sendMessage(input){const text=input.value.trim();if(!text||!activeChatUid)return;input.value='';try{await fb.addDoc(fb.collection(fb.db,'messages'),{participants:[currentUid,activeChatUid].sort(),from:currentUid,fromName:currentUserName,to:activeChatUid,toName:activeChatName,text,ts:fb.serverTimestamp()})}catch(err){alert('Message failed to send. Check that the messages rules are published.')}}
+async function deleteMessage(id){if(!id||!LIVE)return;if(!confirm('Delete this message permanently? This can\u2019t be undone and removes it for both people in the chat.'))return;try{await fb.deleteDoc(fb.doc(fb.db,'messages',String(id)))}catch(err){console.warn('delete message',err);alert('Couldn\u2019t delete the message. Make sure the /messages delete rule (v11) is published in Firestore.')}}
 function startChat(uid,name){showTab('inbox');renderInbox();openChat(uid,name)}
 function subscribeMessages(){const q=fb.query(fb.collection(fb.db,'messages'),fb.where('participants','array-contains',currentUid));fb.onSnapshot(q,snap=>{myMessages=snap.docs.map(d=>({id:d.id,...d.data()}));myMessages.sort((a,b)=>tsMs(a.ts)-tsMs(b.ts));syncActiveRead();if($('inbox').classList.contains('active'))renderInbox();updateInboxBadge()},err=>console.warn('messages listener',err))}
 

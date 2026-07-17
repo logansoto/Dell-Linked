@@ -1,6 +1,20 @@
 <!DOCTYPE html>
 <!-- ============================================================
-     Dell Linked  ·  VERSION 9  ·  2026-07-17
+     Dell Linked  ·  VERSION 10  ·  2026-07-17
+     v10: HOTFIX -- v9 BROKE SIGN-IN. Do not ship v9.
+       - Cause: fmtAgo() was defined *inside* the Delliberate block even
+         though the Inbox also uses it. The v9 rewrite replaced that whole
+         block and deleted it. renderPosts() then threw a ReferenceError on
+         the init line -- and initLive() was the 3rd statement in that same
+         unguarded sequence, so Firebase NEVER INITIALISED. LIVE stayed
+         false, the app fell back to local mode, and real accounts could
+         not authenticate. The sign-in button "did nothing".
+       - Fix 1: fmtAgo restored and moved up next to escapeHtml/initials
+         with the other shared helpers, so no future block edit can orphan it.
+       - Fix 2: init is now guarded -- initLive() runs even if a panel
+         throws. Auth must never depend on a render succeeding.
+       - Fix 3: enterApp() guards its render calls for the same reason.
+       - No Firebase config, rules, scoring or v9 feature changes.
      v9: DELLIBERATE REBUILT + PEOPLE ARE CLICKABLE EVERYWHERE.
        - Threads: each post is now a clickable row that opens a full
          thread view (post + comment tree + composer), with a back link.
@@ -86,7 +100,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="app-version" content="9">
+<meta name="app-version" content="10">
 <title>Dell Linked</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -661,7 +675,7 @@
   </div>
 </div>
 
-<div class="foot"><span class="pill">Dell Linked</span><span class="pill">Version 9</span><span class="pill" id="mode-pill">Local mode · offline</span></div>
+<div class="foot"><span class="pill">Dell Linked</span><span class="pill">Version 10</span><span class="pill" id="mode-pill">Local mode · offline</span></div>
 
 <script>
 const $=id=>document.getElementById(id);
@@ -671,6 +685,10 @@ function escapeHtml(s){return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&l
 function loadJSON(k,d){try{const s=localStorage.getItem(k);return s?JSON.parse(s):d}catch(e){return d}}
 function saveJSON(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}
 function avatarInner(p){const ph=p&&(p.photo);return ph?'<img src="'+ph+'" alt="">':initials(p&&(p.name||p.n))}
+// Shared by Delliberate AND the Inbox. It used to live inside the Delliberate
+// block, where a v9 rewrite of that block deleted it -- which threw at init and
+// took initLive() down with it. It lives up here with the other helpers now.
+function fmtAgo(ts){const s=(Date.now()-ts)/1000;if(s<3600)return Math.max(1,Math.round(s/60))+'m ago';if(s<86400)return Math.round(s/3600)+'h ago';return Math.round(s/86400)+'d ago'}
 
 const tabs=document.querySelectorAll('.tab'),panels=document.querySelectorAll('.panel');
 function showTab(name){
@@ -1582,7 +1600,9 @@ function addAccount(email,rec){memAccounts[email]=rec;try{const s=localStorage.g
 function setSession(email,name){try{localStorage.setItem(SESSION_KEY,JSON.stringify({email,name}))}catch(e){}}
 function clearSession(){try{localStorage.removeItem(SESSION_KEY)}catch(e){}}
 function getSession(){try{const s=localStorage.getItem(SESSION_KEY);return s?JSON.parse(s):null}catch(e){return null}}
-function enterApp(name,uid){currentUserName=name;currentUid=uid||'';const mp=myProfile();$('uname').textContent=name;$('uav').innerHTML=(mp&&mp.photo)?'<img src="'+mp.photo+'" alt="">':initials(name);$('userchip').classList.add('show');$('signin').classList.add('hide');showTab('linked');runSearch($('c-search').value.trim());renderPosts();updateInboxBadge()}
+function enterApp(name,uid){currentUserName=name;currentUid=uid||'';const mp=myProfile();$('uname').textContent=name;$('uav').innerHTML=(mp&&mp.photo)?'<img src="'+mp.photo+'" alt="">':initials(name);$('userchip').classList.add('show');$('signin').classList.add('hide');
+  try{showTab('linked');runSearch($('c-search').value.trim());renderPosts();updateInboxBadge()}
+  catch(err){console.error('Dell Linked: post-login render failed:',err)}}
 function siError(m){const e=$('si-error');e.textContent=m;e.classList.add('show');const c=document.querySelector('.signin-card');c.classList.remove('shake');void c.offsetWidth;c.classList.add('shake')}
 function siClear(){$('si-error').classList.remove('show')}
 function validEmail(e){return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)}
@@ -1633,8 +1653,13 @@ async function initLive(){
 }
 
 /* boot */
-bindToggle();syncSort();renderPosts();runSearch('');
-if(!CONFIGURED){const s=getSession();if(s&&s.name)enterApp(s.name,'')}
+// Sign-in must come up even if a panel fails to render. Previously these ran as
+// one unguarded sequence, so a single throw in renderPosts() silently skipped
+// initLive() and left the app stuck in local mode with no way to sign in.
+try{bindToggle();syncSort();renderPosts();runSearch('')}
+catch(err){console.error('Dell Linked: initial render failed, continuing to auth anyway:',err)}
+try{if(!CONFIGURED){const s=getSession();if(s&&s.name)enterApp(s.name,'')}}
+catch(err){console.error('Dell Linked: session restore failed:',err)}
 initLive();
 </script>
 </body>

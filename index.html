@@ -1015,12 +1015,13 @@ $('signout').onclick=async()=>{
    Until it's filled in, the app runs in local/offline mode.
 ============================================================ */
 const firebaseConfig={
-  apiKey:"PASTE_YOUR_API_KEY",
-  authDomain:"PASTE_YOUR_PROJECT.firebaseapp.com",
-  projectId:"PASTE_YOUR_PROJECT_ID",
-  storageBucket:"PASTE_YOUR_PROJECT.appspot.com",
-  messagingSenderId:"PASTE_SENDER_ID",
-  appId:"PASTE_APP_ID"
+  apiKey:"AIzaSyC-nsO4pMX-XHYBaHlMjaqc4XbaPIBEQVg",
+  authDomain:"dell-linked.firebaseapp.com",
+  projectId:"dell-linked",
+  storageBucket:"dell-linked.firebasestorage.app",
+  messagingSenderId:"293431489883",
+  appId:"1:293431489883:web:a0bee595bda1675c66567e",
+  measurementId:"G-4G454W6Y56"
 };
 function isConfigured(c){return !!(c&&c.apiKey&&c.apiKey.indexOf('PASTE')===-1&&c.projectId&&c.projectId.indexOf('PASTE')===-1);}
 const CONFIGURED=isConfigured(firebaseConfig);

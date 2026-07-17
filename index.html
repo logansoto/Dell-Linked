@@ -1,6 +1,25 @@
 <!DOCTYPE html>
 <!-- ============================================================
-     Dell Linked  ·  VERSION 8  ·  2026-07-17
+     Dell Linked  ·  VERSION 9  ·  2026-07-17
+     v9: DELLIBERATE REBUILT + PEOPLE ARE CLICKABLE EVERYWHERE.
+       - Threads: each post is now a clickable row that opens a full
+         thread view (post + comment tree + composer), with a back link.
+       - Reddit-style comments: nested replies to any depth, up/down
+         voting on posts AND every comment, OP tag, collapsible subtrees
+         via the left rail or the Collapse button, score-sorted.
+       - Data model: flat `answers[]` -> nested `comments[]` with
+         `replies[]`. migratePost() reads old saved posts, so anything
+         already in localStorage survives the upgrade.
+       - NEW person popup: one read-only card (photo, title/team,
+         location, expertise, hometown, schools, past roles, ERGs,
+         mentorship, their Convergence projects, Message button).
+         Opens from the Dell Linked cards, the Convergence match list,
+         radar nodes (double-click), and every author/commenter name.
+         Close via X, backdrop, or Esc.
+       - Wiring uses one capture-phase listener on [data-person], so a
+         name click never also fires the card/row handler beneath it.
+       - Delliberate is STILL per-browser (local). Nothing here needs a
+         Firestore rules change; nothing Firebase was touched.
      v8: LAYOUT / SPACING ONLY. No logic, data or Firebase changes.
        - The map column was a fixed 520px next to a ~1500px sidebar, so
          everything below the map was dead white space. The map is now
@@ -67,7 +86,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="app-version" content="8">
+<meta name="app-version" content="9">
 <title>Dell Linked</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -294,37 +313,98 @@
   .tier-row .tnm i{width:8px;height:8px;border-radius:50%;flex:none}
   .tier-row .tds{font-size:11.5px;color:var(--text-2);line-height:1.5}
 
-  /* Delliberate */
+  /* Delliberate (v9 — reddit-style threads) */
   .forum-composer{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:18px;box-shadow:var(--shadow);margin-bottom:20px}
   .forum-composer input[type=text]{margin-bottom:12px;font-weight:500}
   .sortbar{display:flex;gap:8px;align-items:center;margin-bottom:14px}
   .sortbar .lab{font-size:12px;color:var(--muted)}
   .sortbtn{font-size:12.5px;font-weight:500;padding:6px 13px;border-radius:20px;background:var(--surface);border:1px solid var(--line-strong);color:var(--muted);cursor:pointer;font-family:var(--font)}
   .sortbtn.on{background:var(--blue-tint);border-color:var(--blue);color:var(--blue-dark)}
-  .post{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px;box-shadow:var(--shadow);margin-bottom:14px;display:flex;gap:14px}
+  .hide{display:none !important}
+
+  /* clickable person, used on every tab */
+  .person-link{cursor:pointer;font-weight:600;color:var(--blue-dark);border-radius:3px;transition:.12s}
+  .person-link:hover{text-decoration:underline;background:var(--blue-tint)}
+
+  .post{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px;box-shadow:var(--shadow);margin-bottom:11px;display:flex;gap:14px;cursor:pointer;transition:.14s}
+  .post:hover{border-color:var(--blue);box-shadow:0 2px 10px rgba(0,90,158,.10)}
   .vote{display:flex;flex-direction:column;align-items:center;gap:2px;flex:none;width:40px}
-  .vbtn{width:28px;height:24px;border:1px solid var(--line-strong);background:var(--surface);border-radius:6px;cursor:pointer;color:var(--muted);font-size:13px;display:grid;place-items:center;font-family:var(--font)}
+  .vbtn{width:28px;height:24px;border:1px solid var(--line-strong);background:var(--surface);border-radius:6px;cursor:pointer;color:var(--muted);font-size:13px;display:grid;place-items:center;font-family:var(--font);transition:.12s}
   .vbtn:hover{border-color:var(--blue);color:var(--blue)}
   .vbtn.on{background:var(--blue);border-color:var(--blue);color:#fff}
+  .vbtn.on.dn{background:#C7443B;border-color:#C7443B}
   .vscore{font-weight:700;font-size:14px}
   .post-main{flex:1;min-width:0}
-  .post-q{font-weight:700;font-size:16px;cursor:pointer;line-height:1.35}
-  .post-q:hover{color:var(--blue-dark)}
-  .post-body{font-size:13.5px;color:var(--text-2);line-height:1.55;margin:6px 0 0}
-  .post-meta{font-size:12px;color:var(--muted);margin-top:10px;display:flex;gap:14px;flex-wrap:wrap}
-  .post-meta .ans-toggle{color:var(--blue);cursor:pointer;font-weight:500}
-  .answers{margin-top:14px;border-top:1px solid var(--line);padding-top:14px;display:none}
-  .answers.open{display:block}
-  .answer{padding:12px 0;border-bottom:1px solid var(--line)}
-  .answer:last-of-type{border-bottom:0}
-  .answer .atop{display:flex;align-items:center;gap:8px;margin-bottom:5px}
-  .answer .aav{width:24px;height:24px;border-radius:50%;background:var(--blue);color:#fff;display:grid;place-items:center;font-weight:700;font-size:10px}
-  .answer .anm{font-weight:500;font-size:12.5px}
-  .answer .ameta{font-size:11px;color:var(--muted)}
-  .answer .abody{font-size:13.5px;color:var(--text-2);line-height:1.55}
-  .answer .avote{margin-top:6px;display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted)}
-  .answer .avbtn{cursor:pointer;color:var(--muted);border:1px solid var(--line-strong);border-radius:5px;padding:2px 8px;background:var(--surface);font-family:var(--font);font-size:11.5px}
-  .answer-form{margin-top:12px}
+  .post-q{font-weight:700;font-size:16px;line-height:1.35}
+  .post:hover .post-q{color:var(--blue-dark)}
+  .post-body{font-size:13.5px;color:var(--text-2);line-height:1.55;margin:6px 0 0;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .post-meta{font-size:12px;color:var(--muted);margin-top:10px;display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+  .post-meta .cmt-n{color:var(--blue);font-weight:600}
+  .forum-empty{color:var(--muted);font-size:13.5px;padding:20px 0}
+
+  /* thread view */
+  .dlb-back{display:inline-flex;align-items:center;gap:7px;font-size:13px;font-weight:600;color:var(--blue);background:transparent;border:0;cursor:pointer;font-family:var(--font);padding:0;margin-bottom:14px}
+  .dlb-back:hover{text-decoration:underline}
+  .thread-post{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:18px 20px;box-shadow:var(--shadow);display:flex;gap:14px}
+  .thread-post .post-q{font-size:19px}
+  .thread-post .post-body{font-size:14px;display:block;overflow:visible;margin-top:8px}
+  .cmt-composer{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px;box-shadow:var(--shadow);margin-top:14px}
+  .cmt-composer textarea{min-height:78px}
+  .cmt-count{font-weight:700;font-size:13.5px;margin:20px 0 8px;color:var(--text-2)}
+  .cmt-wrap{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:8px 18px 14px;box-shadow:var(--shadow)}
+
+  .cmt{display:flex;gap:9px;padding-top:12px}
+  .cmt-rail{flex:none;width:15px;display:flex;justify-content:center;cursor:pointer;padding-top:2px}
+  .cmt-rail:before{content:"";width:2px;flex:1;background:var(--line);border-radius:2px;transition:.12s}
+  .cmt-rail:hover:before{background:var(--blue)}
+  .cmt-main{flex:1;min-width:0;padding-bottom:2px}
+  .cmt-head{font-size:11.5px;color:var(--muted);display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:3px}
+  .cmt-head .cav{width:20px;height:20px;border-radius:50%;background:var(--blue);color:#fff;display:grid;place-items:center;font-weight:700;font-size:8.5px;flex:none;overflow:hidden}
+  .cmt-head .cav img{width:100%;height:100%;object-fit:cover}
+  .cmt-head .op{font-size:9px;font-weight:700;letter-spacing:.4px;background:var(--blue-tint);color:var(--blue-dark);padding:1px 5px;border-radius:3px}
+  .cmt-body{font-size:13.5px;color:var(--text);line-height:1.55;word-wrap:break-word}
+  .cmt-actions{display:flex;align-items:center;gap:4px;margin-top:5px}
+  .mini-v{width:22px;height:20px;border:0;background:transparent;color:var(--muted);cursor:pointer;font-size:10px;display:grid;place-items:center;border-radius:4px;font-family:var(--font);transition:.12s}
+  .mini-v:hover{background:var(--surface-2);color:var(--blue)}
+  .mini-v.on{color:var(--blue);font-weight:700}
+  .mini-v.on.dn{color:#C7443B}
+  .mini-score{font-size:11.5px;font-weight:700;color:var(--text-2);min-width:16px;text-align:center}
+  .cmt-btn{font-size:11.5px;font-weight:600;color:var(--muted);background:transparent;border:0;cursor:pointer;font-family:var(--font);padding:3px 7px;border-radius:4px;transition:.12s}
+  .cmt-btn:hover{background:var(--surface-2);color:var(--blue)}
+  .cmt-kids{margin-top:2px}
+  .cmt.collapsed>.cmt-main>.cmt-body,.cmt.collapsed>.cmt-main>.cmt-actions,.cmt.collapsed>.cmt-main>.cmt-kids,.cmt.collapsed>.cmt-main>.reply-box{display:none}
+  .cmt.collapsed>.cmt-main>.cmt-head{margin-bottom:0}
+  .cmt-hidden{font-size:11px;color:var(--muted);font-style:italic}
+  .reply-box{margin-top:8px}
+  .reply-box textarea{min-height:64px;font-size:13px}
+  .reply-box .row{margin-top:7px;gap:8px}
+
+  /* person popup — read-only card for anyone, anywhere */
+  .modal-x{position:absolute;top:14px;right:14px;width:30px;height:30px;border-radius:50%;border:1px solid var(--line-strong);background:var(--surface);color:var(--muted);font-size:17px;line-height:1;cursor:pointer;display:grid;place-items:center;font-family:var(--font);transition:.14s;z-index:2}
+  .modal-x:hover{border-color:#C7443B;color:#C7443B;background:#FDF3F2}
+  .person-modal-card{position:relative;max-width:540px}
+  .pm-top{display:flex;gap:15px;align-items:center;margin-bottom:16px;padding-right:34px}
+  .pm-av{width:62px;height:62px;border-radius:50%;background:var(--blue);color:#fff;display:grid;place-items:center;font-weight:700;font-size:21px;flex:none;overflow:hidden}
+  .pm-av img{width:100%;height:100%;object-fit:cover}
+  .pm-nm{font-weight:700;font-size:20px;line-height:1.2}
+  .pm-ti{font-size:13px;color:var(--text-2);margin-top:3px}
+  .pm-loc{font-size:12.5px;color:var(--muted);margin-top:2px}
+  .pm-sec{border-top:1px solid var(--line);padding-top:13px;margin-top:13px}
+  .pm-lbl{font-size:9.5px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:var(--muted);margin-bottom:7px}
+  .pm-val{font-size:13px;color:var(--text);line-height:1.6}
+  .pm-chips{display:flex;flex-wrap:wrap;gap:6px}
+  .pm-chip{font-size:11.5px;font-weight:500;padding:4px 9px;border-radius:5px;background:var(--surface-2);border:1px solid var(--line-strong);color:var(--text-2)}
+  .pm-chip.erg{background:var(--blue-tint);border-color:var(--blue);color:var(--blue-dark)}
+  .pm-ment{display:flex;flex-wrap:wrap;gap:7px;margin-top:12px}
+  .pm-ment span{font-size:11px;font-weight:600;padding:4px 9px;border-radius:5px}
+  .pm-ment .offer{background:#E7F4EC;color:#1D7A45;border:1px solid #BFE3CE}
+  .pm-ment .seek{background:var(--amber-tint);color:#8A6216;border:1px solid #EAD6A8}
+  .pm-proj{border:1px solid var(--line);background:var(--surface-2);border-radius:6px;padding:9px 11px;margin-bottom:7px;border-left:3px solid var(--blue)}
+  .pm-proj b{font-size:12.5px;display:block}
+  .pm-proj span{font-size:11.5px;color:var(--text-2)}
+  .pm-proj i{font-size:10.5px;color:var(--muted);font-style:normal;display:block;margin-top:3px}
+  .pm-thin{font-size:12.5px;color:var(--muted);line-height:1.6;background:var(--surface-2);border:1px dashed var(--line-strong);border-radius:6px;padding:12px}
+  .pm-actions{display:flex;gap:9px;margin-top:18px}
 
   /* Inbox / chat */
   .chat-wrap{display:grid;grid-template-columns:300px 1fr;gap:0;border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;box-shadow:var(--shadow);height:560px;background:var(--surface)}
@@ -513,18 +593,24 @@
   </section>
 
   <section class="panel" id="delliberate">
-    <p class="eyebrow">Ask, answer, decide together</p>
-    <h1>Delliberate</h1>
-    <p class="sub">Dell's internal Q&amp;A. Ask a question, get considered answers, and let the best rise through votes.</p>
-    <div class="forum-composer">
-      <label class="field-label" for="q-title">Your question</label>
-      <input type="text" id="q-title" placeholder="e.g. What's the source of truth for customer account data?">
-      <label class="field-label" for="q-body">Add detail (optional)</label>
-      <textarea id="q-body" placeholder="Context, what you've tried, what you're deciding between…"></textarea>
-      <div class="row"><button class="btn" id="q-post">Post question</button></div>
+    <div id="dlb-list">
+      <p class="eyebrow">Ask, answer, decide together</p>
+      <h1>Delliberate</h1>
+      <p class="sub">Dell's internal Q&amp;A. Ask a question, get considered answers, and let the best rise through votes.</p>
+      <div class="forum-composer">
+        <label class="field-label" for="q-title">Your question</label>
+        <input type="text" id="q-title" placeholder="e.g. What's the source of truth for customer account data?">
+        <label class="field-label" for="q-body">Add detail (optional)</label>
+        <textarea id="q-body" placeholder="Context, what you've tried, what you're deciding between…"></textarea>
+        <div class="row"><button class="btn" id="q-post">Post question</button></div>
+      </div>
+      <div class="sortbar"><span class="lab">Sort:</span><button class="sortbtn on" data-sort="top">Top</button><button class="sortbtn" data-sort="new">New</button></div>
+      <div id="posts"></div>
     </div>
-    <div class="sortbar"><span class="lab">Sort:</span><button class="sortbtn on" data-sort="top">Top</button><button class="sortbtn" data-sort="new">New</button></div>
-    <div id="posts"></div>
+    <div id="dlb-thread" class="hide">
+      <button class="dlb-back" id="dlb-back">&larr; All questions</button>
+      <div id="thread-mount"></div>
+    </div>
   </section>
 
   <section class="panel" id="inbox">
@@ -534,6 +620,13 @@
     <div id="chat-mount"></div>
   </section>
 </main>
+
+<div class="modal" id="person-modal">
+  <div class="modal-card person-modal-card">
+    <button class="modal-x" id="person-x" aria-label="Close">&times;</button>
+    <div id="person-body"></div>
+  </div>
+</div>
 
 <div class="modal" id="profile-modal">
   <div class="modal-card">
@@ -568,7 +661,7 @@
   </div>
 </div>
 
-<div class="foot"><span class="pill">Dell Linked</span><span class="pill">Version 8</span><span class="pill" id="mode-pill">Local mode · offline</span></div>
+<div class="foot"><span class="pill">Dell Linked</span><span class="pill">Version 9</span><span class="pill" id="mode-pill">Local mode · offline</span></div>
 
 <script>
 const $=id=>document.getElementById(id);
@@ -644,6 +737,8 @@ function renderPeople(res,qtok,q){
     const canMsg=LIVE&&np.uid&&np.uid!==currentUid;
     const blank=!!np.uid&&!np.title&&!np.team&&!np.location&&!(np.skills||[]).length&&!(np.schools||[]).length&&!np.pastRoles&&!np.hometown;
     const card=document.createElement('div');card.className='pcard'+(mine?' me':'')+(blank?' blank':'');
+    card.setAttribute('data-person',np.name);if(np.uid)card.setAttribute('data-person-uid',np.uid);
+    card.style.cursor='pointer';card.title='View '+np.name+'\u2019s profile';
     let ment='';if(np.mentorOffer)ment+='<span class="offer">Mentors others</span>';if(np.mentorSeek)ment+='<span class="seek">Seeking a mentor</span>';
     const extraBits=[];if(np.hometown)extraBits.push('From '+np.hometown);if(np.year)extraBits.push('Joined '+np.year);if((np.schools||[]).length)extraBits.push((np.schools).join(', '));
     const tiText=blank?'New member':escapeHtml([np.title,np.team].filter(Boolean).join(' · '));
@@ -1031,6 +1126,8 @@ function renderMap(spawnId){
     node.innerHTML='<div class="bead"></div><div class="lbl"><b>'+escapeHtml(nd.n)+' \u00b7 '+nd.match+'% \u00b7 '+tier.label+'</b>'+escapeHtml(nd.t||'')+' \u2014 '+escapeHtml(nd.i||'')+'</div>';
     node.onclick=()=>{selectedNode=(selectedNode===nd.id?null:nd.id);renderMap();
       const el=document.querySelector('.rel-item[data-id="'+nd.id+'"]');if(el)el.scrollIntoView({block:'nearest',behavior:'smooth'})};
+    node.ondblclick=e=>{e.stopPropagation();openPersonCard(nd.uid||'',nd.n)};
+    node.title='Click to focus \u00b7 double-click for '+nd.n+'\u2019s profile';
     constEl.appendChild(node);
   });
 
@@ -1053,7 +1150,7 @@ function updateRelated(show){
     item.setAttribute('data-id',n.id);
     const canMsg=LIVE&&n.uid&&n.uid!==currentUid;
     item.innerHTML=
-      '<div class="rhead"><div class="rtitle">'+escapeHtml(n.n)+'</div><div class="rpct">'+n.match+'%</div></div>'+
+      '<div class="rhead"><div class="rtitle person-link" '+personAttr(n.n,n.uid)+'>'+escapeHtml(n.n)+'</div><div class="rpct">'+n.match+'%</div></div>'+
       '<div class="rteams">'+escapeHtml(n.t||'\u2014')+' \u00b7 '+escapeHtml(unitName(n.unit))+'<br>'+escapeHtml(n.i||'')+'</div>'+
       '<div class="rtier">'+tier.label+'</div>'+
       '<div class="raction">'+tier.action+'</div>'+
@@ -1136,20 +1233,275 @@ document.addEventListener('visibilitychange',()=>{if(syncActiveRead()){if($('inb
 window.addEventListener('focus',()=>{if(syncActiveRead()){if($('inbox').classList.contains('active'))renderInbox();updateInboxBadge()}});
 
 /* =========================================================
-   DELLIBERATE
+   PEOPLE POPUP (v9) — one card, clickable from every tab
+========================================================= */
+function projectsForPerson(p){
+  return allNodes().filter(n=>p.uid&&n.uid?n.uid===p.uid:(n.n===p.name));
+}
+function findPerson(uid,name){
+  const all=allPeople();
+  let p=(uid&&all.find(x=>x.uid&&x.uid===uid))||(name&&all.find(x=>x.name===name))||null;
+  if(p)return p;
+  // Someone who exists on the Convergence map or a forum post but has no
+  // directory profile yet — show what we do know rather than a dead click.
+  const nd=allNodes().find(x=>(uid&&x.uid===uid)||(name&&x.n===name));
+  if(!name&&!nd)return null;
+  return {uid:uid||(nd&&nd.uid)||null,name:name||(nd&&nd.n)||'Someone',
+    title:'',team:(nd&&nd.t)||'',location:'',hometown:'',year:'',pastRoles:'',
+    schools:[],skills:[],ergs:[],photo:'',mentorOffer:false,mentorSeek:false,thin:true};
+}
+function openPersonCard(uid,name){
+  const p=findPerson(uid,name);if(!p)return;
+  const isMe=(p.uid&&p.uid===currentUid)||(!p.uid&&p.name===currentUserName);
+  const canMsg=LIVE&&p.uid&&p.uid!==currentUid;
+  const proj=projectsForPerson(p);
+  const facts=[];
+  if(p.hometown)facts.push(['Hometown',p.hometown]);
+  if(p.year)facts.push(['Joined Dell',p.year]);
+  if((p.schools||[]).length)facts.push(['Schools',p.schools.join(', ')]);
+  if(p.pastRoles)facts.push(['Past roles & teams',p.pastRoles]);
+  let h='<div class="pm-top"><div class="pm-av">'+(p.photo?'<img src="'+p.photo+'" alt="">':escapeHtml(initials(p.name)))+'</div>'+
+    '<div><div class="pm-nm">'+escapeHtml(p.name)+(isMe?' <span class="youtag">You</span>':'')+'</div>'+
+    ((p.title||p.team)?'<div class="pm-ti">'+escapeHtml([p.title,p.team].filter(Boolean).join(' \u00b7 '))+'</div>':'')+
+    (p.location?'<div class="pm-loc">'+escapeHtml(p.location)+'</div>':'')+'</div></div>';
+  if(p.thin){
+    h+='<div class="pm-thin">'+escapeHtml(p.name)+' hasn\u2019t filled in a directory profile yet'+
+       (p.team?', but they\u2019re on '+escapeHtml(p.team)+' on the Convergence map':'')+'.</div>';
+  }
+  if(p.mentorOffer||p.mentorSeek){
+    h+='<div class="pm-ment">'+(p.mentorOffer?'<span class="offer">Mentors others</span>':'')+
+       (p.mentorSeek?'<span class="seek">Seeking a mentor</span>':'')+'</div>';
+  }
+  if((p.skills||[]).length)
+    h+='<div class="pm-sec"><div class="pm-lbl">Areas of expertise</div><div class="pm-chips">'+
+       p.skills.map(s=>'<span class="pm-chip">'+escapeHtml(s)+'</span>').join('')+'</div></div>';
+  facts.forEach(f=>{h+='<div class="pm-sec"><div class="pm-lbl">'+escapeHtml(f[0])+'</div><div class="pm-val">'+escapeHtml(f[1])+'</div></div>'});
+  if((p.ergs||[]).length)
+    h+='<div class="pm-sec"><div class="pm-lbl">Employee resource groups</div><div class="pm-chips">'+
+       p.ergs.map(e=>'<span class="pm-chip erg">'+escapeHtml(e)+'</span>').join('')+'</div></div>';
+  if(proj.length)
+    h+='<div class="pm-sec"><div class="pm-lbl">Working on \u00b7 '+proj.length+'</div>'+
+       proj.map(n=>'<div class="pm-proj"><b>'+escapeHtml(n.unit?ptypeName(n.ptype):'Project')+'</b>'+
+         '<span>'+escapeHtml(n.unit?(n.obj||''):(n.i||''))+'</span>'+
+         (n.unit?'<i>'+escapeHtml(n.t||'')+' \u00b7 '+escapeHtml(unitName(n.unit))+'</i>':'')+'</div>').join('')+'</div>';
+  h+='<div class="pm-actions">'+
+     (isMe?'<button class="btn" id="pm-edit">Edit my profile</button>':'')+
+     (canMsg?'<button class="btn" id="pm-msg">Message '+escapeHtml((p.name||'').split(' ')[0])+'</button>':'')+
+     '</div>';
+  $('person-body').innerHTML=h;
+  if($('pm-edit'))$('pm-edit').onclick=()=>{closePersonCard();openProfile()};
+  if($('pm-msg'))$('pm-msg').onclick=()=>{closePersonCard();startChat(p.uid,p.name)};
+  $('person-modal').classList.add('show');
+}
+function closePersonCard(){$('person-modal').classList.remove('show')}
+$('person-x').onclick=closePersonCard;
+$('person-modal').addEventListener('click',e=>{if(e.target===$('person-modal'))closePersonCard()});
+
+// Capture phase: fires before any card/row handler, so clicking a name opens the
+// person and never also triggers the container underneath it.
+document.addEventListener('click',e=>{
+  if(e.target.closest('button,input,select,textarea,a'))return;
+  const el=e.target.closest('[data-person]');
+  if(!el)return;
+  e.preventDefault();e.stopPropagation();
+  openPersonCard(el.getAttribute('data-person-uid')||'',el.getAttribute('data-person')||'');
+},true);
+// Esc closes the topmost layer only: person popup first, then the thread view.
+document.addEventListener('keydown',e=>{
+  if(e.key!=='Escape')return;
+  if($('person-modal').classList.contains('show')){closePersonCard();return}
+  if($('profile-modal').classList.contains('show'))return;   // let the edit modal own its own Esc
+  if($('dlb-thread')&&!$('dlb-thread').classList.contains('hide')&&$('delliberate').classList.contains('active'))closeThreadView();
+});
+
+/* =========================================================
+   DELLIBERATE (v9) — clickable threads, nested comments, voting
 ========================================================= */
 const SEED_POSTS=[
-  {id:'p1',title:"What's considered the source of truth for customer account data?",body:"Two teams are pulling from different systems and getting different numbers. Is there an agreed canonical source?",author:'Ravi Menon',ts:Date.now()-172800000,votes:14,myVote:0,answers:[{author:'Ana Costa',body:"The Accounts warehouse (ACCT_CORE) is the agreed source of truth as of last quarter. Anything upstream is staging.",ts:Date.now()-129600000,votes:9}]},
-  {id:'p2',title:"How are teams approaching AI assistants without duplicating effort?",body:"Feels like several groups are each building their own internal copilot. Shared platform, or everyone rolling their own?",author:'Tom Becker',ts:Date.now()-86400000,votes:22,myVote:0,answers:[{author:'Wei Zhang',body:"There's an early shared retrieval layer forming. Coordinate before building a new one — this is what Convergence surfaces.",ts:Date.now()-28800000,votes:12},{author:'Nadia Hassan',body:"We paused ours after finding two other teams doing the same. Reach out before you build.",ts:Date.now()-18000000,votes:6}]},
-  {id:'p3',title:"Best practices for migrating a legacy service with near-zero downtime?",body:"Planning a warehouse migration and want to avoid a hard cutover. What's worked for people here?",author:'Lucia Romano',ts:Date.now()-72000000,votes:8,myVote:0,answers:[{author:'Ingrid Larsen',body:"Dual-write, backfill, then flip reads behind a flag. We ran both paths in parallel for two weeks before decommissioning.",ts:Date.now()-36000000,votes:7}]}
+  {id:'p1',title:"What's considered the source of truth for customer account data?",body:"Two teams are pulling from different systems and getting different numbers. Is there an agreed canonical source?",author:'Ravi Menon',ts:Date.now()-172800000,votes:14,myVote:0,
+   comments:[{id:'s1',author:'Ana Costa',body:"The Accounts warehouse (ACCT_CORE) is the agreed source of truth as of last quarter. Anything upstream is staging.",ts:Date.now()-129600000,votes:9,myVote:0,replies:[
+     {id:'s1a',author:'Ravi Menon',body:"That's what I thought \u2014 is that written down anywhere people can actually find?",ts:Date.now()-120000000,votes:4,myVote:0,replies:[
+       {id:'s1a1',author:'Ana Costa',body:"Only in the data governance deck, which is exactly the problem. I'll get it into the wiki this week.",ts:Date.now()-115000000,votes:6,myVote:0,replies:[]}]},
+     {id:'s1b',author:'Chloe Dubois',body:"Worth noting BI still reads from the staging tables for two legacy dashboards. We're migrating them off this quarter.",ts:Date.now()-110000000,votes:3,myVote:0,replies:[]}]}]},
+  {id:'p2',title:"How are teams approaching AI assistants without duplicating effort?",body:"Feels like several groups are each building their own internal copilot. Shared platform, or everyone rolling their own?",author:'Tom Becker',ts:Date.now()-86400000,votes:22,myVote:0,
+   comments:[{id:'s2',author:'Wei Zhang',body:"There's an early shared retrieval layer forming. Coordinate before building a new one \u2014 this is exactly what Convergence surfaces.",ts:Date.now()-28800000,votes:12,myVote:0,replies:[
+     {id:'s2a',author:'Nadia Hassan',body:"We paused ours after finding two other teams doing the same. Reach out before you build.",ts:Date.now()-18000000,votes:6,myVote:0,replies:[]}]},
+    {id:'s2b',author:'Ben Adler',body:"Counterpoint: a shared platform only helps if it ships. Ours was blocked for a quarter waiting on one.",ts:Date.now()-14000000,votes:5,myVote:0,replies:[]}]},
+  {id:'p3',title:"Best practices for migrating a legacy service with near-zero downtime?",body:"Planning a warehouse migration and want to avoid a hard cutover. What's worked for people here?",author:'Lucia Romano',ts:Date.now()-72000000,votes:8,myVote:0,
+   comments:[{id:'s3',author:'Ingrid Larsen',body:"Dual-write, backfill, then flip reads behind a flag. We ran both paths in parallel for two weeks before decommissioning.",ts:Date.now()-36000000,votes:7,myVote:0,replies:[
+     {id:'s3a',author:'Lucia Romano',body:"How did you handle reconciliation between the two paths while both were live?",ts:Date.now()-30000000,votes:2,myVote:0,replies:[]}]}]}
 ];
-let posts=loadJSON('dl_posts',null)||SEED_POSTS.map(p=>({...p})),sortMode='top';
-function fmtAgo(ts){const s=(Date.now()-ts)/1000;if(s<3600)return Math.max(1,Math.round(s/60))+'m ago';if(s<86400)return Math.round(s/3600)+'h ago';return Math.round(s/86400)+'d ago'}
+let cidSeq=0;
+const newCid=()=>'c'+Date.now().toString(36)+(++cidSeq);
+function migrateComment(a){
+  return {id:a.id||newCid(),author:a.author,uid:a.uid||null,body:a.body,ts:a.ts,
+          votes:a.votes||0,myVote:a.myVote||0,replies:(a.replies||[]).map(migrateComment)};
+}
+function migratePost(p){
+  // v9: `answers` (flat) became `comments` (nested). Old saved posts still load.
+  const src=p.comments||p.answers||[];
+  return {id:p.id,title:p.title,body:p.body||'',author:p.author,uid:p.uid||null,ts:p.ts,
+          votes:p.votes||0,myVote:p.myVote||0,comments:src.map(migrateComment)};
+}
+let posts=(loadJSON('dl_posts',null)||SEED_POSTS).map(migratePost),sortMode='top';
+let openThreadId=null,collapsed=new Set(),replyTo=null;
 function savePosts(){saveJSON('dl_posts',posts)}
-function renderPosts(){const wrap=$('posts');wrap.innerHTML='';posts.slice().sort((a,b)=>sortMode==='top'?b.votes-a.votes:b.ts-a.ts).forEach(p=>{const el=document.createElement('div');el.className='post';el.innerHTML='<div class="vote"><button class="vbtn'+(p.myVote===1?' on':'')+'" data-v="up">▲</button><span class="vscore">'+p.votes+'</span><button class="vbtn'+(p.myVote===-1?' on':'')+'" data-v="down">▼</button></div><div class="post-main"><div class="post-q">'+escapeHtml(p.title)+'</div>'+(p.body?'<p class="post-body">'+escapeHtml(p.body)+'</p>':'')+'<div class="post-meta"><span>Asked by '+escapeHtml(p.author)+' · '+fmtAgo(p.ts)+'</span><span class="ans-toggle">'+p.answers.length+' answer'+(p.answers.length!==1?'s':'')+'</span></div><div class="answers"></div></div>';const up=el.querySelector('[data-v="up"]'),dn=el.querySelector('[data-v="down"]'),aw=el.querySelector('.answers'),tg=el.querySelector('.ans-toggle');up.onclick=()=>{vote(p,1);savePosts();renderPosts()};dn.onclick=()=>{vote(p,-1);savePosts();renderPosts()};tg.onclick=()=>{aw.classList.toggle('open');if(aw.classList.contains('open'))renderAnswers(aw,p)};wrap.appendChild(el)})}
-function vote(p,d){if(p.myVote===d){p.votes-=d;p.myVote=0}else{p.votes+=d-p.myVote;p.myVote=d}}
-function renderAnswers(w,p){w.innerHTML='';p.answers.slice().sort((a,b)=>b.votes-a.votes).forEach(a=>{const d=document.createElement('div');d.className='answer';d.innerHTML='<div class="atop"><div class="aav">'+initials(a.author)+'</div><span class="anm">'+escapeHtml(a.author)+'</span><span class="ameta">· '+fmtAgo(a.ts)+'</span></div><div class="abody">'+escapeHtml(a.body)+'</div><div class="avote"><button class="avbtn">▲ Helpful</button><span>'+a.votes+'</span></div>';d.querySelector('.avbtn').onclick=()=>{a.votes++;savePosts();renderAnswers(w,p)};w.appendChild(d)});const f=document.createElement('div');f.className='answer-form';f.innerHTML='<label class="field-label">Your answer</label><textarea placeholder="Share what you know…"></textarea><div class="row"><button class="btn">Post answer</button></div>';const ta=f.querySelector('textarea');f.querySelector('button').onclick=()=>{const v=ta.value.trim();if(!v)return;p.answers.push({author:currentUserName,body:v,ts:Date.now(),votes:0});savePosts();renderAnswers(w,p)};w.appendChild(f)}
-$('q-post').onclick=()=>{const t=$('q-title').value.trim();if(!t){$('q-title').focus();return}posts.unshift({id:'p'+Date.now(),title:t,body:$('q-body').value.trim(),author:currentUserName,ts:Date.now(),votes:1,myVote:1,answers:[]});savePosts();$('q-title').value='';$('q-body').value='';sortMode='new';syncSort();renderPosts()};
+function countComments(list){return list.reduce((a,c)=>a+1+countComments(c.replies||[]),0)}
+function findComment(list,id){
+  for(const c of list){if(c.id===id)return c;const f=findComment(c.replies||[],id);if(f)return f}
+  return null;
+}
+function vote(o,d){if(o.myVote===d){o.votes-=d;o.myVote=0}else{o.votes+=d-o.myVote;o.myVote=d}}
+function personAttr(name,uid){return 'data-person="'+escapeHtml(name||'')+'"'+(uid?' data-person-uid="'+escapeHtml(uid)+'"':'')}
+function personPhoto(name,uid){
+  const p=findPerson(uid,name);
+  return (p&&p.photo)?'<img src="'+p.photo+'" alt="">':escapeHtml(initials(name));
+}
+
+/* ---- list view ---- */
+function renderPosts(){
+  const wrap=$('posts');wrap.innerHTML='';
+  if(!posts.length){wrap.innerHTML='<p class="forum-empty">No questions yet. Ask the first one above.</p>';return}
+  posts.slice().sort((a,b)=>sortMode==='top'?b.votes-a.votes:b.ts-a.ts).forEach(p=>{
+    const n=countComments(p.comments);
+    const el=document.createElement('div');el.className='post';
+    el.innerHTML=
+      '<div class="vote">'+
+        '<button class="vbtn'+(p.myVote===1?' on':'')+'" data-v="up" title="Upvote">\u25b2</button>'+
+        '<span class="vscore">'+p.votes+'</span>'+
+        '<button class="vbtn dn'+(p.myVote===-1?' on':'')+'" data-v="down" title="Downvote">\u25bc</button>'+
+      '</div>'+
+      '<div class="post-main">'+
+        '<div class="post-q">'+escapeHtml(p.title)+'</div>'+
+        (p.body?'<p class="post-body">'+escapeHtml(p.body)+'</p>':'')+
+        '<div class="post-meta"><span>Asked by </span><span class="person-link" '+personAttr(p.author,p.uid)+'>'+escapeHtml(p.author)+'</span>'+
+        '<span>\u00b7 '+fmtAgo(p.ts)+'</span><span>\u00b7</span><span class="cmt-n">'+n+' comment'+(n!==1?'s':'')+'</span></div>'+
+      '</div>';
+    el.querySelector('[data-v="up"]').onclick=e=>{e.stopPropagation();vote(p,1);savePosts();renderPosts()};
+    el.querySelector('[data-v="down"]').onclick=e=>{e.stopPropagation();vote(p,-1);savePosts();renderPosts()};
+    el.onclick=()=>openThreadView(p.id);
+    wrap.appendChild(el);
+  });
+}
+
+/* ---- thread view ---- */
+function openThreadView(id){
+  openThreadId=id;replyTo=null;collapsed=new Set();
+  $('dlb-list').classList.add('hide');$('dlb-thread').classList.remove('hide');
+  renderThreadView();window.scrollTo({top:0,behavior:'smooth'});
+}
+function closeThreadView(){
+  openThreadId=null;replyTo=null;
+  $('dlb-thread').classList.add('hide');$('dlb-list').classList.remove('hide');
+  renderPosts();
+}
+function renderThreadView(){
+  const p=posts.find(x=>x.id===openThreadId);
+  if(!p){closeThreadView();return}
+  const n=countComments(p.comments);
+  const mount=$('thread-mount');mount.innerHTML='';
+
+  const head=document.createElement('div');head.className='thread-post';
+  head.innerHTML=
+    '<div class="vote">'+
+      '<button class="vbtn'+(p.myVote===1?' on':'')+'" data-v="up">\u25b2</button>'+
+      '<span class="vscore">'+p.votes+'</span>'+
+      '<button class="vbtn dn'+(p.myVote===-1?' on':'')+'" data-v="down">\u25bc</button>'+
+    '</div>'+
+    '<div class="post-main">'+
+      '<div class="post-q">'+escapeHtml(p.title)+'</div>'+
+      (p.body?'<p class="post-body">'+escapeHtml(p.body)+'</p>':'')+
+      '<div class="post-meta"><span>Asked by </span><span class="person-link" '+personAttr(p.author,p.uid)+'>'+escapeHtml(p.author)+'</span>'+
+      '<span>\u00b7 '+fmtAgo(p.ts)+'</span></div>'+
+    '</div>';
+  head.querySelector('[data-v="up"]').onclick=()=>{vote(p,1);savePosts();renderThreadView()};
+  head.querySelector('[data-v="down"]').onclick=()=>{vote(p,-1);savePosts();renderThreadView()};
+  mount.appendChild(head);
+
+  const comp=document.createElement('div');comp.className='cmt-composer';
+  comp.innerHTML='<label class="field-label">Add a comment</label><textarea placeholder="Share what you know\u2026"></textarea>'+
+                 '<div class="row"><button class="btn">Comment</button></div>';
+  const ta=comp.querySelector('textarea');
+  comp.querySelector('button').onclick=()=>{
+    const v=ta.value.trim();if(!v)return;
+    p.comments.push({id:newCid(),author:currentUserName,uid:currentUid||null,body:v,ts:Date.now(),votes:1,myVote:1,replies:[]});
+    savePosts();renderThreadView();
+  };
+  mount.appendChild(comp);
+
+  const cc=document.createElement('div');cc.className='cmt-count';
+  cc.textContent=n+' comment'+(n!==1?'s':'');mount.appendChild(cc);
+
+  if(n){
+    const box=document.createElement('div');box.className='cmt-wrap';
+    box.appendChild(commentTree(p.comments,p));
+    mount.appendChild(box);
+  }
+}
+function commentTree(list,post){
+  const frag=document.createDocumentFragment();
+  list.slice().sort((a,b)=>b.votes-a.votes).forEach(c=>frag.appendChild(commentNode(c,post)));
+  return frag;
+}
+function commentNode(c,post){
+  const isOP=c.author===post.author;
+  const kids=countComments(c.replies||[]);
+  const el=document.createElement('div');
+  el.className='cmt'+(collapsed.has(c.id)?' collapsed':'');
+  const rail=document.createElement('div');rail.className='cmt-rail';
+  rail.title='Collapse thread';
+  rail.onclick=e=>{e.stopPropagation();collapsed.has(c.id)?collapsed.delete(c.id):collapsed.add(c.id);renderThreadView()};
+  const main=document.createElement('div');main.className='cmt-main';
+  main.innerHTML=
+    '<div class="cmt-head"><span class="cav">'+personPhoto(c.author,c.uid)+'</span>'+
+      '<span class="person-link" '+personAttr(c.author,c.uid)+'>'+escapeHtml(c.author)+'</span>'+
+      (isOP?'<span class="op">OP</span>':'')+
+      '<span>\u00b7 '+fmtAgo(c.ts)+'</span>'+
+      (collapsed.has(c.id)?'<span class="cmt-hidden">\u00b7 '+(kids?kids+' hidden':'collapsed')+'</span>':'')+
+    '</div>'+
+    '<div class="cmt-body">'+escapeHtml(c.body)+'</div>'+
+    '<div class="cmt-actions">'+
+      '<button class="mini-v'+(c.myVote===1?' on':'')+'" data-v="up" title="Upvote">\u25b2</button>'+
+      '<span class="mini-score">'+c.votes+'</span>'+
+      '<button class="mini-v dn'+(c.myVote===-1?' on':'')+'" data-v="down" title="Downvote">\u25bc</button>'+
+      '<button class="cmt-btn" data-a="reply">Reply</button>'+
+      (kids?'<button class="cmt-btn" data-a="col">'+(collapsed.has(c.id)?'Expand':'Collapse')+'</button>':'')+
+    '</div>';
+  main.querySelector('[data-v="up"]').onclick=()=>{vote(c,1);savePosts();renderThreadView()};
+  main.querySelector('[data-v="down"]').onclick=()=>{vote(c,-1);savePosts();renderThreadView()};
+  main.querySelector('[data-a="reply"]').onclick=()=>{replyTo=(replyTo===c.id?null:c.id);renderThreadView()};
+  const cb=main.querySelector('[data-a="col"]');
+  if(cb)cb.onclick=()=>{collapsed.has(c.id)?collapsed.delete(c.id):collapsed.add(c.id);renderThreadView()};
+
+  if(replyTo===c.id){
+    const rb=document.createElement('div');rb.className='reply-box';
+    rb.innerHTML='<textarea placeholder="Reply to '+escapeHtml(c.author)+'\u2026"></textarea>'+
+      '<div class="row"><button class="btn sm">Reply</button><button class="btn ghost sm" data-a="cancel">Cancel</button></div>';
+    const rta=rb.querySelector('textarea');
+    rb.querySelector('.btn:not(.ghost)').onclick=()=>{
+      const v=rta.value.trim();if(!v)return;
+      c.replies.push({id:newCid(),author:currentUserName,uid:currentUid||null,body:v,ts:Date.now(),votes:1,myVote:1,replies:[]});
+      replyTo=null;collapsed.delete(c.id);savePosts();renderThreadView();
+    };
+    rb.querySelector('[data-a="cancel"]').onclick=()=>{replyTo=null;renderThreadView()};
+    main.appendChild(rb);
+    setTimeout(()=>rta.focus(),30);
+  }
+  if((c.replies||[]).length){
+    const kidsWrap=document.createElement('div');kidsWrap.className='cmt-kids';
+    kidsWrap.appendChild(commentTree(c.replies,post));
+    main.appendChild(kidsWrap);
+  }
+  el.appendChild(rail);el.appendChild(main);
+  return el;
+}
+$('dlb-back').onclick=closeThreadView;
+$('q-post').onclick=()=>{
+  const t=$('q-title').value.trim();if(!t){$('q-title').focus();return}
+  posts.unshift({id:'p'+Date.now(),title:t,body:$('q-body').value.trim(),author:currentUserName,uid:currentUid||null,
+                 ts:Date.now(),votes:1,myVote:1,comments:[]});
+  savePosts();$('q-title').value='';$('q-body').value='';sortMode='new';syncSort();renderPosts();
+};
 document.querySelectorAll('.sortbtn').forEach(b=>b.onclick=()=>{sortMode=b.dataset.sort;syncSort();renderPosts()});
 function syncSort(){document.querySelectorAll('.sortbtn').forEach(b=>b.classList.toggle('on',b.dataset.sort===sortMode))}
 

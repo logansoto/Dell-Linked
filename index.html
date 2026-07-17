@@ -1,4 +1,10 @@
 <!DOCTYPE html>
+<!-- ============================================================
+     Dell-Linked  ·  VERSION 2  ·  2026-07-16
+     Change from v1: removed mock SSO button; sign-in is now
+     fully handled by Firebase Authentication.
+     (Firebase config + live code preserved below.)
+============================================================ -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -58,8 +64,6 @@
   .signin .btn{width:100%;justify-content:center;padding:13px;font-size:15px}
   .signin .divider{display:flex;align-items:center;gap:12px;margin:18px 0;color:var(--muted-2);font-size:12px}
   .signin .divider::before,.signin .divider::after{content:"";flex:1;height:1px;background:var(--line)}
-  .signin .btn.sso{background:var(--surface);color:var(--text);border:1px solid var(--line-strong);box-shadow:none}
-  .signin .btn.sso:hover{background:var(--surface-2);border-color:var(--blue);color:var(--blue-dark)}
   .signin .fine{font-size:11.5px;color:var(--muted-2);margin-top:24px;line-height:1.55}
   .signin .fine b{color:var(--muted);font-weight:500}
   .signin .forgot{font-size:12.5px;color:var(--blue);text-decoration:none;display:inline-block;margin:-4px 0 20px}
@@ -283,10 +287,8 @@
     <input type="password" id="si-pass" placeholder="••••••••" autocomplete="current-password">
     <a class="forgot" href="#" id="si-forgot" onclick="return false">Forgot password?</a>
     <button class="btn" id="signin-btn">Sign in</button>
-    <div class="divider">or</div>
-    <button class="btn sso" id="sso-btn">Continue with Dell SSO</button>
     <p class="si-toggle" id="si-toggle-line">New here? <a href="#" id="si-toggle" onclick="return false">Create an account</a></p>
-    <p class="fine">Demo login — <b>demo@dell.com</b> · <b>dell2025</b>. Authorized personnel only; access is logged per Dell security policy.</p>
+    <p class="fine">Sign in or create an account to continue. Authorized personnel only; access is logged per Dell security policy.</p>
   </div>
 </div>
 
@@ -399,9 +401,9 @@
 </main>
 
 <div class="foot">
-  <span class="pill">Runs entirely offline</span>
-  <span class="pill">No data leaves this device</span>
-  <span class="pill">Pre-loaded demonstration data</span>
+  <span class="pill">Dell-Linked</span>
+  <span class="pill">Version 2</span>
+  <span class="pill" id="mode-pill">Local mode · offline</span>
 </div>
 
 <script>
@@ -994,7 +996,6 @@ function fbAuthError(code){
 }
 
 $('signin-btn').onclick=submitAuth;
-$('sso-btn').onclick=()=>{const name='Jordan Ellis';if(!LIVE)setSession('jordan.ellis@dell.com',name);enterApp(name);};
 $('si-name').addEventListener('keydown',e=>{if(e.key==='Enter')$('si-email').focus();});
 $('si-email').addEventListener('keydown',e=>{if(e.key==='Enter')$('si-pass').focus();});
 $('si-pass').addEventListener('keydown',e=>{if(e.key==='Enter')submitAuth();});
@@ -1045,6 +1046,7 @@ async function initLive(){
       collection:fsMod.collection,addDoc:fsMod.addDoc,serverTimestamp:fsMod.serverTimestamp
     };
     LIVE=true;
+    const mp=document.getElementById('mode-pill');if(mp)mp.textContent='Live · shared data';
     const fine=document.querySelector('.signin .fine');
     if(fine)fine.innerHTML='Create an account or sign in to continue. Authorized personnel only; access is logged per Dell security policy.';
     // Shared, realtime Collision Radar — updates for every visitor with no refresh

@@ -1,6 +1,9 @@
 <!DOCTYPE html>
 <!-- ============================================================
-     Dell Linked  ·  VERSION 4  ·  2026-07-16
+     Dell Linked  ·  VERSION 5  ·  2026-07-16
+     v5: every signed-up account now appears in the directory. A blank
+         profile is auto-created on sign-in, so people show up before
+         they finish filling in details. (No Firestore rules change needed.)
      Changes from v3:
        - Profiles are now SHARED across accounts (Firestore) with full fields:
          name, title/role, team, location, mentorship flags, photo upload,
@@ -16,7 +19,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="app-version" content="4">
+<meta name="app-version" content="5">
 <title>Dell Linked</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -116,6 +119,9 @@
   .people{display:grid;grid-template-columns:repeat(auto-fill,minmax(258px,1fr));gap:14px}
   .pcard{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:17px;box-shadow:var(--shadow)}
   .pcard.me{border-color:var(--blue);box-shadow:0 0 0 1px var(--blue),var(--shadow)}
+  .pcard.blank{border-style:dashed}
+  .pcard.blank .avatar{background:var(--muted-2)}
+  .blanknote{font-style:italic;color:var(--muted-2)}
   .pcard .ptop{display:flex;align-items:center;gap:11px;margin-bottom:11px}
   .avatar{width:44px;height:44px;border-radius:50%;flex:none;display:grid;place-items:center;font-weight:700;font-size:15px;color:#fff;background:var(--blue);overflow:hidden}
   .avatar img{width:100%;height:100%;object-fit:cover}
@@ -399,7 +405,7 @@
   </div>
 </div>
 
-<div class="foot"><span class="pill">Dell Linked</span><span class="pill">Version 4</span><span class="pill" id="mode-pill">Local mode · offline</span></div>
+<div class="foot"><span class="pill">Dell Linked</span><span class="pill">Version 5</span><span class="pill" id="mode-pill">Local mode · offline</span></div>
 
 <script>
 const $=id=>document.getElementById(id);
@@ -416,6 +422,7 @@ function showTab(name){
   panels.forEach(p=>p.classList.toggle('active',p.id===name));
   if(name==='convergence')setTimeout(renderMap,60);
   if(name==='inbox')renderInbox();
+  if(name==='linked')runSearch($('c-search').value.trim());
 }
 tabs.forEach(t=>t.addEventListener('click',()=>showTab(t.dataset.tab)));
 
@@ -472,16 +479,20 @@ function renderPeople(res,qtok,q){
   res.forEach(np=>{
     const mine=(np.uid&&np.uid===currentUid)||(np.name===currentUserName&&!np.uid);
     const canMsg=LIVE&&np.uid&&np.uid!==currentUid;
-    const card=document.createElement('div');card.className='pcard'+(mine?' me':'');
+    const blank=!!np.uid&&!np.title&&!np.team&&!np.location&&!(np.skills||[]).length&&!(np.schools||[]).length&&!np.pastRoles&&!np.hometown;
+    const card=document.createElement('div');card.className='pcard'+(mine?' me':'')+(blank?' blank':'');
     let ment='';if(np.mentorOffer)ment+='<span class="offer">Mentors others</span>';if(np.mentorSeek)ment+='<span class="seek">Seeking a mentor</span>';
     const extraBits=[];if(np.hometown)extraBits.push('From '+np.hometown);if(np.year)extraBits.push('Joined '+np.year);if((np.schools||[]).length)extraBits.push((np.schools).join(', '));
+    const tiText=blank?'New member':escapeHtml([np.title,np.team].filter(Boolean).join(' · '));
+    const blankNote=blank?(mine?'<div class="extra blanknote">You haven\'t completed your profile yet — click “My profile” to add details.</div>':'<div class="extra blanknote">Hasn\'t completed their profile yet.</div>'):'';
     card.innerHTML=
-      '<div class="ptop"><div class="avatar">'+avatarInner(np)+'</div><div><div class="nm">'+escapeHtml(np.name)+'</div><div class="ti">'+escapeHtml([np.title,np.team].filter(Boolean).join(' · '))+'</div></div>'+(mine?'<span class="youtag">You</span>':'')+'</div>'+
+      '<div class="ptop"><div class="avatar">'+avatarInner(np)+'</div><div><div class="nm">'+escapeHtml(np.name)+'</div><div class="ti">'+tiText+'</div></div>'+(mine?'<span class="youtag">You</span>':'')+'</div>'+
       (np.location?'<div class="loc">'+escapeHtml(np.location)+'</div>':'')+
       (ment?'<div class="ment">'+ment+'</div>':'')+
       ((np.skills||[]).length?'<div class="skills">'+np.skills.map(s=>'<span class="skill '+(qtok.some(t=>s.toLowerCase().includes(t))?'match':'')+'">'+escapeHtml(s)+'</span>').join('')+'</div>':'')+
       (extraBits.length?'<div class="extra">'+escapeHtml(extraBits.join(' · '))+'</div>':'')+
-      (canMsg?'<button class="btn sm msg-btn">Message</button>':(np.uid?'':(mine?'':'')));
+      blankNote+
+      (canMsg?'<button class="btn sm msg-btn">Message</button>':'');
     if(canMsg)card.querySelector('.msg-btn').onclick=()=>startChat(np.uid,np.name);
     wrap.appendChild(card);
   });
@@ -503,8 +514,7 @@ $('pf-school-input').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preven
 function renderSchoolChips(){const w=$('pf-schools');w.innerHTML='';pfSchools.forEach((s,i)=>{const c=document.createElement('span');c.className='school-chip';c.innerHTML=escapeHtml(s)+' <b>&times;</b>';c.querySelector('b').onclick=()=>{pfSchools.splice(i,1);renderSchoolChips()};w.appendChild(c)})}
 $('pf-pic').addEventListener('change',e=>{const f=e.target.files[0];if(!f)return;resizeImage(f,256,d=>{pfPhoto=d;$('pf-pic-prev').innerHTML='<img src="'+d+'" alt="">'})});
 function resizeImage(file,max,cb){const r=new FileReader();r.onload=ev=>{const img=new Image();img.onload=()=>{let w=img.width,h=img.height;if(w>h){if(w>max){h=h*max/w;w=max}}else{if(h>max){w=w*max/h;h=max}}const cv=document.createElement('canvas');cv.width=w;cv.height=h;cv.getContext('2d').drawImage(img,0,0,w,h);cb(cv.toDataURL('image/jpeg',.72))};img.src=ev.target.result};r.readAsDataURL(file)}
-function myProfile(){return shownProfiles().find(p=>(LIVE?p.uid===currentUid:p.name===currentUserName))}
-function openProfile(){
+function myProfile(){return shownProfiles().find(p=>(LIVE?p.uid===currentUid:p.name===currentUserName))}function openProfile(){
   const mine=myProfile();
   $('pf-name').value=currentUserName;
   $('pf-title').value=mine?mine.title||'':'';$('pf-team').value=mine?mine.team||'':'';$('pf-loc').value=mine?mine.location||'':'';
@@ -673,6 +683,7 @@ const firebaseConfig={
   measurementId:"G-4G454W6Y56"
 };
 function isConfigured(c){return !!(c&&c.apiKey&&c.apiKey.indexOf('PASTE')===-1&&c.projectId&&c.projectId.indexOf('PASTE')===-1)}
+async function ensureProfile(user,nm){try{await fb.setDoc(fb.doc(fb.db,'profiles',user.uid),{uid:user.uid,name:nm},{merge:true})}catch(e){console.warn('ensureProfile',e)}}
 const CONFIGURED=isConfigured(firebaseConfig),FB_VER='11.0.2';
 async function initLive(){
   if(!CONFIGURED)return;
@@ -688,7 +699,7 @@ async function initLive(){
     // profiles (shared directory)
     fm.onSnapshot(fm.collection(db,'profiles'),snap=>{liveProfiles=snap.docs.map(d=>({uid:d.id,...d.data()}));if($('linked').classList.contains('active'))runSearch($('c-search').value.trim());const mp2=myProfile();if(mp2&&$('uav'))$('uav').innerHTML=mp2.photo?'<img src="'+mp2.photo+'" alt="">':initials(currentUserName)},err=>console.warn('profiles:',err));
     // auth
-    aum.onAuthStateChanged(auth,user=>{if(user){const nm=user.displayName||(user.email?user.email.split('@')[0].replace(/[._-]+/g,' ').replace(/\b\w/g,c=>c.toUpperCase()):'User');enterApp(nm,user.uid);subscribeMessages()}else{$('signin').classList.remove('hide');$('userchip').classList.remove('show')}});
+    aum.onAuthStateChanged(auth,user=>{if(user){const nm=user.displayName||(user.email?user.email.split('@')[0].replace(/[._-]+/g,' ').replace(/\b\w/g,c=>c.toUpperCase()):'User');enterApp(nm,user.uid);ensureProfile(user,nm);subscribeMessages()}else{$('signin').classList.remove('hide');$('userchip').classList.remove('show')}});
   }catch(err){console.warn('Live mode unavailable — local mode:',err);LIVE=false}
 }
 

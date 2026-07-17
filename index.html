@@ -1,6 +1,26 @@
 <!DOCTYPE html>
 <!-- ============================================================
-     Dell Linked  ·  VERSION 6  ·  2026-07-17
+     Dell Linked  ·  VERSION 7  ·  2026-07-17
+     v7: PROJECTS ARE NOW OWNED OBJECTS.
+       - Every project you map is listed in TWO places: a "Your projects"
+         card on Convergence and a "Your projects" block in the profile
+         modal. Both lists are live and both can delete.
+       - Deleting removes the Firestore doc, so it vanishes from the
+         directory card, your profile, and EVERY other user's radar.
+       - Directory cards now show what each person is working on.
+       - *** REQUIRES A FIRESTORE RULES UPDATE *** (first since v4).
+         /initiatives previously had `allow update, delete: if false`.
+         New rule lets an owner delete their own doc, matched on uid:
+           allow delete: if request.auth != null
+                         && request.auth.uid == resource.data.uid;
+         Also added `deleteDoc` to the fb SDK object in initLive().
+         Pre-v7 docs have no uid and are intentionally NOT deletable.
+       - Convergence gained a "How to read this radar" breakdown:
+         the 100-point weighting and what each tier band means.
+       - INBOX FIX: the unread dot used to survive until you re-clicked a
+         chat you were already reading. Reading is now a live condition
+         (thread open + tab active + window visible), re-checked on every
+         incoming message and on focus/visibility change.
      v6: CONVERGENCE REBUILT.
        - Free-text "what are you building" replaced by 5 cascading dropdowns:
          1 Business unit -> 2 Team -> 3 Project type -> 4 Tools (multi-select)
@@ -35,7 +55,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="app-version" content="6">
+<meta name="app-version" content="7">
 <title>Dell Linked</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -220,6 +240,46 @@
   .rel-total{font-weight:700;font-size:28px;color:var(--blue)}
   .rel-cap{font-size:10.5px;font-weight:500;letter-spacing:1px;text-transform:uppercase;color:var(--muted);margin-top:2px}
 
+  /* v7 — my projects */
+  .proj-row{display:flex;align-items:flex-start;gap:10px;border:1px solid var(--line);background:var(--surface-2);border-radius:6px;padding:10px 11px;margin-bottom:8px;border-left:3px solid var(--blue)}
+  .proj-row .pmeta{flex:1;min-width:0}
+  .proj-row .pttl{font-weight:700;font-size:12.5px;margin-bottom:2px}
+  .proj-row .psub{font-size:11.5px;color:var(--text-2);line-height:1.5;word-wrap:break-word}
+  .proj-row .ptools{font-size:10.5px;color:var(--muted);margin-top:4px}
+  .proj-del{flex:none;border:1px solid var(--line-strong);background:var(--surface);color:var(--muted);border-radius:5px;width:26px;height:26px;font-size:15px;line-height:1;cursor:pointer;transition:.14s;font-family:inherit}
+  .proj-del:hover{border-color:#C7443B;color:#C7443B;background:#FDF3F2}
+  .proj-legacy{border-left-color:var(--line-strong);opacity:.85}
+  .proj-count{font-size:11px;color:var(--muted);font-weight:500;margin-left:auto}
+  .pf-proj-note{font-size:11.5px;color:var(--muted);line-height:1.55;margin:0 0 10px}
+  .card-projects{max-height:230px;overflow-y:auto}
+
+  /* v7 — projects on directory cards */
+  .pcard .pprojects{margin-top:10px;border-top:1px dashed var(--line-strong);padding-top:9px}
+  .pcard .pplbl{font-size:9.5px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:var(--muted);margin-bottom:5px}
+  .pcard .pchip{display:block;font-size:11px;color:var(--text-2);line-height:1.5;margin-bottom:3px}
+  .pcard .pchip b{color:var(--text);font-weight:600}
+
+  /* v7 — how to read the radar */
+  .scale-card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:20px;box-shadow:var(--shadow);margin-top:20px}
+  .scale-card h3{font-weight:700;font-size:14.5px;margin:0 0 4px}
+  .scale-card .shead{font-size:12.5px;color:var(--text-2);margin:0 0 16px;line-height:1.55}
+  .scale-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+  @media(max-width:840px){.scale-grid{grid-template-columns:1fr}}
+  .scale-sub{font-size:10.5px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:var(--muted);margin:0 0 9px}
+  .wbar{display:flex;align-items:center;gap:9px;margin-bottom:7px;font-size:12px}
+  .wbar .wn{width:104px;flex:none;color:var(--text);font-weight:500}
+  .wbar .wt{flex:1;height:7px;background:var(--surface-2);border-radius:4px;overflow:hidden;border:1px solid var(--line)}
+  .wbar .wf{height:100%;background:var(--blue);border-radius:4px}
+  .wbar .wp{width:34px;flex:none;text-align:right;color:var(--muted);font-weight:600;font-size:11px}
+  .wnote{font-size:11px;color:var(--muted);line-height:1.55;margin:10px 0 0}
+  .tier-row{display:flex;gap:10px;padding:9px 0;border-bottom:1px solid var(--line)}
+  .tier-row:last-child{border-bottom:none}
+  .tier-row .tband{flex:none;width:62px;font-weight:700;font-size:12px;color:var(--text)}
+  .tier-row .tbody{flex:1}
+  .tier-row .tnm{font-size:12px;font-weight:700;margin-bottom:2px;display:flex;align-items:center;gap:6px}
+  .tier-row .tnm i{width:8px;height:8px;border-radius:50%;flex:none}
+  .tier-row .tds{font-size:11.5px;color:var(--text-2);line-height:1.5}
+
   /* Delliberate */
   .forum-composer{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:18px;box-shadow:var(--shadow);margin-bottom:20px}
   .forum-composer input[type=text]{margin-bottom:12px;font-weight:500}
@@ -403,9 +463,36 @@
           <select id="sel-obj" disabled><option value="">Pick a project type first</option></select>
           <div class="row"><button class="btn" id="r-add">Map my project</button></div>
         </div>
+        <div class="card"><h3>Your projects <span class="proj-count" id="my-proj-count"></span></h3>
+          <div id="my-projects" class="card-projects"></div>
+        </div>
         <div class="card"><h3><span class="hdot"></span>Recommended actions</h3>
           <div id="rel-list"><p class="empty-collide">Map your project to see who you converge with and what to do next.</p></div>
           <div style="margin-top:14px;border-top:1px solid var(--line);padding-top:13px"><div class="rel-total" id="rel-total">0</div><div class="rel-cap">People on your radar</div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="scale-card">
+      <h3>How to read this radar</h3>
+      <p class="shead">Everyone is scored against your project out of 100 points across the five things you selected. The more of those five you share, the closer they sit to the centre. Anything under 20% is filtered out entirely.</p>
+      <div class="scale-grid">
+        <div>
+          <p class="scale-sub">Where the 100 points come from</p>
+          <div class="wbar"><span class="wn">Project type</span><span class="wt"><span class="wf" style="width:100%"></span></span><span class="wp">25</span></div>
+          <div class="wbar"><span class="wn">Tools shared</span><span class="wt"><span class="wf" style="width:100%"></span></span><span class="wp">25</span></div>
+          <div class="wbar"><span class="wn">Objective</span><span class="wt"><span class="wf" style="width:80%"></span></span><span class="wp">20</span></div>
+          <div class="wbar"><span class="wn">Team</span><span class="wt"><span class="wf" style="width:72%"></span></span><span class="wp">18</span></div>
+          <div class="wbar"><span class="wn">Business unit</span><span class="wt"><span class="wf" style="width:48%"></span></span><span class="wp">12</span></div>
+          <p class="wnote"><b>Project type, objective and unit</b> are all-or-nothing &mdash; you match or you don&rsquo;t. <b>Tools</b> scale with overlap, so 4 of your 5 tools in common scores far higher than 1. <b>Team</b> only counts if you&rsquo;re in the same unit to begin with. Someone in a different unit doing the exact same work with the same stack still tops out at 70% &mdash; which is the point: that&rsquo;s the person you&rsquo;d never have found otherwise.</p>
+        </div>
+        <div>
+          <p class="scale-sub">What your score means &mdash; and what to do</p>
+          <div class="tier-row"><div class="tband">80&ndash;100%</div><div class="tbody"><div class="tnm"><i style="background:var(--amber)"></i>Overlap risk</div><div class="tds">Same project type, same objective, same tools. You are building the same thing twice. Meet this week &mdash; merge scope or split ownership.</div></div></div>
+          <div class="tier-row"><div class="tband">60&ndash;79%</div><div class="tbody"><div class="tnm"><i style="background:#0076CE"></i>Co-build</div><div class="tds">Same destination, different route. Worth a shared roadmap and reusing each other&rsquo;s components rather than writing them twice.</div></div></div>
+          <div class="tier-row"><div class="tband">40&ndash;59%</div><div class="tbody"><div class="tnm"><i style="background:#5AA9E0"></i>Share the playbook</div><div class="tds">Different project, same toolkit or same category. Trade templates, gotchas and vendor lessons &mdash; you&rsquo;ll each save a sprint.</div></div></div>
+          <div class="tier-row"><div class="tband">20&ndash;39%</div><div class="tbody"><div class="tnm"><i style="background:#9CC5E4"></i>Network &amp; skill-share</div><div class="tds">Loosely adjacent &mdash; usually one shared signal. A 20-minute intro; keep each other on the radar for later.</div></div></div>
+          <div class="tier-row"><div class="tband">&lt;20%</div><div class="tbody"><div class="tnm"><i style="background:var(--line-strong)"></i>Not shown</div><div class="tds">Below the noise floor. Hidden so the radar stays readable.</div></div></div>
         </div>
       </div>
     </div>
@@ -460,11 +547,14 @@
     <div class="toggle-row" style="margin-bottom:14px"><span>Looking for a mentor</span><div class="tg" id="tg-seek"></div></div>
     <label class="field-label">Employee resource groups</label>
     <div class="erg-check" id="pf-erg"></div>
+    <label class="field-label" style="margin-top:16px">Your projects <span class="proj-count" id="pf-proj-count"></span></label>
+    <p class="pf-proj-note">These are the projects you&rsquo;ve mapped on Convergence. They&rsquo;re visible on your directory card. Removing one here also removes it from everyone&rsquo;s radar.</p>
+    <div id="pf-projects"></div>
     <div class="modal-actions"><button class="btn ghost" id="pf-cancel">Cancel</button><button class="btn" id="pf-save">Save profile</button></div>
   </div>
 </div>
 
-<div class="foot"><span class="pill">Dell Linked</span><span class="pill">Version 6</span><span class="pill" id="mode-pill">Local mode · offline</span></div>
+<div class="foot"><span class="pill">Dell Linked</span><span class="pill">Version 7</span><span class="pill" id="mode-pill">Local mode · offline</span></div>
 
 <script>
 const $=id=>document.getElementById(id);
@@ -551,6 +641,13 @@ function renderPeople(res,qtok,q){
       ((np.skills||[]).length?'<div class="skills">'+np.skills.map(s=>'<span class="skill '+(qtok.some(t=>s.toLowerCase().includes(t))?'match':'')+'">'+escapeHtml(s)+'</span>').join('')+'</div>':'')+
       (extraBits.length?'<div class="extra">'+escapeHtml(extraBits.join(' · '))+'</div>':'')+
       blankNote+
+      (function(){
+        const pr=projectsOf(np.uid);
+        if(!pr.length)return '';
+        return '<div class="pprojects"><div class="pplbl">Working on \u00b7 '+pr.length+'</div>'+
+          pr.slice(0,4).map(p=>'<span class="pchip"><b>'+escapeHtml(p.unit?ptypeName(p.ptype):'Project')+'</b> \u2014 '+escapeHtml(p.unit?(p.obj||''):(p.i||''))+'</span>').join('')+
+          (pr.length>4?'<span class="pchip">+'+(pr.length-4)+' more</span>':'')+'</div>';
+      })()+
       (canMsg?'<button class="btn sm msg-btn">Message</button>':'');
     if(canMsg)card.querySelector('.msg-btn').onclick=()=>startChat(np.uid,np.name);
     wrap.appendChild(card);
@@ -583,6 +680,7 @@ function myProfile(){return shownProfiles().find(p=>(LIVE?p.uid===currentUid:p.n
   pfErgs=mine?(mine.ergs||[]).slice():[];document.querySelectorAll('#pf-erg .erg-opt').forEach(o=>o.classList.toggle('on',pfErgs.includes(o.textContent)));
   pfOffer=mine?!!mine.openToMentor:false;pfSeek=mine?!!mine.seekingMentor:false;$('tg-offer').classList.toggle('on',pfOffer);$('tg-seek').classList.toggle('on',pfSeek);
   pfPhoto=mine?mine.photo||'':'';$('pf-pic-prev').innerHTML=pfPhoto?'<img src="'+pfPhoto+'" alt="">':'No photo';$('pf-pic').value='';
+  renderMyProjects();
   $('profile-modal').classList.add('show');
 }
 function closeProfile(){$('profile-modal').classList.remove('show')}
@@ -760,6 +858,58 @@ function allNodes(){
   return seedNodes.concat(LIVE?live:localNodes);
 }
 function myFocus(){return allNodes().filter(n=>n.mine)}
+function projectsOf(uid){return uid?allNodes().filter(n=>n.uid&&n.uid===uid):[]}
+
+/* ---- v7: your projects, listed and deletable in two places ---- */
+function projRowHTML(n){
+  const legacy=!n.unit;                       // pre-v6 free-text entry
+  const canDel=!String(n.id).startsWith('seed');
+  return '<div class="proj-row'+(legacy?' proj-legacy':'')+'">'+
+    '<div class="pmeta">'+
+      '<div class="pttl">'+escapeHtml(legacy?'Untyped project':ptypeName(n.ptype))+'</div>'+
+      '<div class="psub">'+escapeHtml(legacy?(n.i||''):(n.obj||''))+'</div>'+
+      (legacy?'<div class="ptools">'+escapeHtml(n.t||'')+' \u00b7 pre-v6 entry</div>'
+             :'<div class="ptools">'+escapeHtml(n.t||'')+' \u00b7 '+escapeHtml(unitName(n.unit))+
+              ((n.tools||[]).length?'<br>'+escapeHtml((n.tools||[]).join(', ')):'')+'</div>')+
+    '</div>'+
+    (canDel?'<button class="proj-del" data-del="'+escapeHtml(String(n.id))+'" title="Delete this project">\u00d7</button>':'')+
+  '</div>';
+}
+function renderMyProjects(){
+  const nodes=myFocus();
+  const html=nodes.length?nodes.map(projRowHTML).join('')
+    :'<p class="empty-collide">No projects mapped yet. Use the five steps above and your project appears here, on your directory card, and on everyone else\u2019s radar.</p>';
+  ['my-projects','pf-projects'].forEach(mount=>{
+    const el=$(mount);if(!el)return;
+    el.innerHTML=html;
+    el.querySelectorAll('.proj-del').forEach(b=>b.onclick=e=>{e.preventDefault();e.stopPropagation();deleteProject(b.dataset.del)});
+  });
+  const label=nodes.length?nodes.length+(nodes.length===1?' project':' projects'):'';
+  ['my-proj-count','pf-proj-count'].forEach(id=>{const el=$(id);if(el)el.textContent=label});
+}
+async function deleteProject(id){
+  const n=myFocus().find(x=>String(x.id)===String(id));
+  if(!n)return;
+  const label=n.unit?(ptypeName(n.ptype)+' \u2014 '+(n.obj||'')):(n.i||'this project');
+  if(!confirm('Delete this project?\n\n'+label+'\n\nIt is removed from your profile and from everyone\u2019s Convergence radar. This cannot be undone.'))return;
+  if(LIVE){
+    if(!n.uid){alert('This project was created before v7 and has no owner recorded, so the security rules won\u2019t let it be deleted. Newly mapped projects delete fine.');return}
+    try{
+      await fb.deleteDoc(fb.doc(fb.db,'initiatives',String(id)));
+      mineIds.delete(String(id));
+    }catch(err){
+      console.warn('delete initiative:',err);
+      alert('Could not delete. Your Firestore rules must allow an owner to delete their own initiative \u2014 publish the v7 rules, then try again.');
+      return;
+    }
+  }else{
+    localNodes=localNodes.filter(x=>String(x.id)!==String(id));
+  }
+  selectedNode=null;
+  renderMyProjects();
+  if($('convergence').classList.contains('active'))renderMap();
+  if($('linked').classList.contains('active'))runSearch($('c-search').value.trim());
+}
 
 // Best score of each other person against any of my mapped projects.
 function relatedSet(){
@@ -782,7 +932,7 @@ function renderMap(spawnId){
   linksSvg.innerHTML='';
   $('empty-map').style.display=focus.length===0?'flex':'none';
   $('map-legend').style.display=focus.length===0?'none':'flex';
-  if(focus.length===0){updateRelated([]);return}
+  if(focus.length===0){updateRelated([]);renderMyProjects();return}
 
   const w=constEl.clientWidth,h=constEl.clientHeight,cx=w/2,cy=h/2;
   const R=Math.max(60,Math.min(w,h)/2-46);
@@ -852,6 +1002,7 @@ function renderMap(spawnId){
   });
 
   updateRelated(show);
+  renderMyProjects();
 }
 
 function updateRelated(show){
@@ -941,11 +1092,15 @@ $('r-add').onclick=async()=>{
   }else{
     const node={...payload,id:'local'+(nodeId++),mine:true};
     localNodes.push(node);renderMap(node.id);
+    if($('linked').classList.contains('active'))runSearch($('c-search').value.trim());
   }
   pickedTools=[];$('tool-count').textContent='';
   document.querySelectorAll('#tool-box .tool-chip.on').forEach(c=>c.classList.remove('on'));
 };
 window.addEventListener('resize',()=>{spawnCluster=null;if($('convergence').classList.contains('active'))renderMap()});
+// v7: returning to the window while a thread is open counts as reading it
+document.addEventListener('visibilitychange',()=>{if(syncActiveRead()){if($('inbox').classList.contains('active'))renderInbox();updateInboxBadge()}});
+window.addEventListener('focus',()=>{if(syncActiveRead()){if($('inbox').classList.contains('active'))renderInbox();updateInboxBadge()}});
 
 /* =========================================================
    DELLIBERATE
@@ -971,7 +1126,27 @@ function syncSort(){document.querySelectorAll('.sortbtn').forEach(b=>b.classList
 let myMessages=[],activeChatUid=null,activeChatName='';
 function tsMs(t){try{return t&&t.toMillis?t.toMillis():Date.now()}catch(e){return Date.now()}}
 function readMap(){return loadJSON('dl_read_'+currentUid,{})}
-function markRead(uid){const m=readMap();m[uid]=Date.now();saveJSON('dl_read_'+currentUid,m)}
+// v7: mark read against the newest message actually in the thread, not just the
+// local clock. messages carry serverTimestamp(), so if the server runs ahead of
+// this browser, a plain Date.now() marker can sit *behind* a message you just
+// read and the dot survives. Watermark past the last message and it can't.
+function markRead(uid){
+  const m=readMap();let hi=Date.now();
+  myMessages.forEach(x=>{if(x.from===uid||x.to===uid){const t=tsMs(x.ts);if(t+1>hi)hi=t+1}});
+  m[uid]=hi;saveJSON('dl_read_'+currentUid,m);
+}
+// v7: you are only "reading" a thread if it's open, on screen, and the window is focused.
+function viewingThread(uid){
+  if(!uid||uid!==activeChatUid)return false;
+  if(typeof document.visibilityState==='string'&&document.visibilityState!=='visible')return false;
+  const ib=$('inbox');if(!ib||!ib.classList.contains('active'))return false;
+  const cw=$('chat-wrap');
+  if(cw&&window.matchMedia('(max-width:720px)').matches&&!cw.classList.contains('thread-open'))return false;
+  return true;
+}
+// Marks the open thread read *now*, so an incoming message you're already
+// looking at never leaves a stale dot behind.
+function syncActiveRead(){if(viewingThread(activeChatUid)){markRead(activeChatUid);return true}return false}
 function conversations(){
   const map={};myMessages.forEach(msg=>{const other=msg.from===currentUid?{uid:msg.to,name:msg.toName}:{uid:msg.from,name:msg.fromName};if(!other.uid)return;const key=other.uid;if(!map[key])map[key]={uid:other.uid,name:other.name,last:null,msgs:[]};map[key].msgs.push(msg);map[key].name=other.name;});
   Object.values(map).forEach(c=>{c.msgs.sort((a,b)=>tsMs(a.ts)-tsMs(b.ts));c.last=c.msgs[c.msgs.length-1]});
@@ -985,6 +1160,7 @@ function renderInbox(){
   if(!mount.querySelector('.chat-wrap')){
     mount.innerHTML='<div class="chat-wrap" id="chat-wrap"><div class="conv-list" id="conv-list"></div><div class="thread" id="thread"><div class="thread-empty" id="thread-empty">Select a conversation, or message someone from the Dell Linked tab.</div></div></div>';
   }
+  syncActiveRead();
   const cl=$('conv-list');cl.innerHTML='';const convs=conversations(),rm=readMap();
   if(convs.length===0){cl.innerHTML='<div class="conv-empty">No conversations yet. Find someone on the Dell Linked tab and hit Message.</div>'}
   convs.forEach(c=>{const unread=c.msgs.some(m=>m.from!==currentUid&&tsMs(m.ts)>(rm[c.uid]||0));const el=document.createElement('div');el.className='conv'+(c.uid===activeChatUid?' active':'');el.innerHTML='<div class="avatar" style="width:38px;height:38px;font-size:13px">'+initials(c.name)+'</div><div class="cinfo"><div class="cnm"><span>'+escapeHtml(c.name)+'</span><span class="ctime">'+(c.last?fmtAgo(tsMs(c.last.ts)):'')+'</span></div><div class="clast">'+escapeHtml(c.last?(c.last.from===currentUid?'You: ':'')+c.last.text:'')+'</div></div>'+(unread?'<div class="cdot"></div>':'');el.onclick=()=>openChat(c.uid,c.name);cl.appendChild(el)});
@@ -1000,12 +1176,12 @@ function renderThread(){
   if(msgs.length===0){body.innerHTML='<div class="thread-empty">No messages yet. Say hello to '+escapeHtml(activeChatName.split(' ')[0])+'.</div>'}
   else msgs.forEach(m=>{const mine=m.from===currentUid;const d=document.createElement('div');d.className='bubble '+(mine?'me':'them');d.innerHTML=escapeHtml(m.text)+'<div class="bt">'+(m.ts?fmtAgo(tsMs(m.ts)):'sending…')+'</div>';body.appendChild(d)});
   body.scrollTop=body.scrollHeight;
-  $('chat-back').onclick=()=>{const cw=$('chat-wrap');if(cw)cw.classList.remove('thread-open')};
+  $('chat-back').onclick=()=>{const cw=$('chat-wrap');if(cw)cw.classList.remove('thread-open');updateInboxBadge()};
   const input=$('chat-input');$('chat-send').onclick=()=>sendMessage(input);input.addEventListener('keydown',e=>{if(e.key==='Enter')sendMessage(input)});input.focus();
 }
 async function sendMessage(input){const text=input.value.trim();if(!text||!activeChatUid)return;input.value='';try{await fb.addDoc(fb.collection(fb.db,'messages'),{participants:[currentUid,activeChatUid].sort(),from:currentUid,fromName:currentUserName,to:activeChatUid,toName:activeChatName,text,ts:fb.serverTimestamp()})}catch(err){alert('Message failed to send. Check that the messages rules are published.')}}
 function startChat(uid,name){showTab('inbox');renderInbox();openChat(uid,name)}
-function subscribeMessages(){const q=fb.query(fb.collection(fb.db,'messages'),fb.where('participants','array-contains',currentUid));fb.onSnapshot(q,snap=>{myMessages=snap.docs.map(d=>({id:d.id,...d.data()}));myMessages.sort((a,b)=>tsMs(a.ts)-tsMs(b.ts));if($('inbox').classList.contains('active'))renderInbox();updateInboxBadge()},err=>console.warn('messages listener',err))}
+function subscribeMessages(){const q=fb.query(fb.collection(fb.db,'messages'),fb.where('participants','array-contains',currentUid));fb.onSnapshot(q,snap=>{myMessages=snap.docs.map(d=>({id:d.id,...d.data()}));myMessages.sort((a,b)=>tsMs(a.ts)-tsMs(b.ts));syncActiveRead();if($('inbox').classList.contains('active'))renderInbox();updateInboxBadge()},err=>console.warn('messages listener',err))}
 
 /* =========================================================
    SIGN-IN
@@ -1058,12 +1234,12 @@ async function initLive(){
   try{
     const [am,aum,fm]=await Promise.all([import(`https://www.gstatic.com/firebasejs/${FB_VER}/firebase-app.js`),import(`https://www.gstatic.com/firebasejs/${FB_VER}/firebase-auth.js`),import(`https://www.gstatic.com/firebasejs/${FB_VER}/firebase-firestore.js`)]);
     const app=am.initializeApp(firebaseConfig),auth=aum.getAuth(app),db=fm.getFirestore(app);
-    fb={auth,db,createUserWithEmailAndPassword:aum.createUserWithEmailAndPassword,signInWithEmailAndPassword:aum.signInWithEmailAndPassword,signOut:aum.signOut,updateProfile:aum.updateProfile,collection:fm.collection,addDoc:fm.addDoc,doc:fm.doc,setDoc:fm.setDoc,serverTimestamp:fm.serverTimestamp,query:fm.query,where:fm.where,onSnapshot:fm.onSnapshot};
+    fb={auth,db,createUserWithEmailAndPassword:aum.createUserWithEmailAndPassword,signInWithEmailAndPassword:aum.signInWithEmailAndPassword,signOut:aum.signOut,updateProfile:aum.updateProfile,collection:fm.collection,addDoc:fm.addDoc,doc:fm.doc,setDoc:fm.setDoc,deleteDoc:fm.deleteDoc,serverTimestamp:fm.serverTimestamp,query:fm.query,where:fm.where,onSnapshot:fm.onSnapshot};
     LIVE=true;const mp=$('mode-pill');if(mp)mp.textContent='Live · shared data';
     const fine=document.querySelector('.signin .fine');if(fine)fine.innerHTML='Create an account or sign in to continue. Authorized personnel only; access is logged per Dell security policy.';
     // initiatives (shared map)
     const qi=fm.query(fm.collection(db,'initiatives'),fm.orderBy('createdAt'));
-    fm.onSnapshot(qi,snap=>{liveNodes=snap.docs.map(d=>({id:d.id,...d.data()}));const sid=pendingSpawnId;pendingSpawnId=null;if($('convergence').classList.contains('active'))renderMap(sid)},err=>console.warn('initiatives:',err));
+    fm.onSnapshot(qi,snap=>{liveNodes=snap.docs.map(d=>({id:d.id,...d.data()}));const sid=pendingSpawnId;pendingSpawnId=null;if($('convergence').classList.contains('active'))renderMap(sid);renderMyProjects();if($('linked').classList.contains('active'))runSearch($('c-search').value.trim())},err=>console.warn('initiatives:',err));
     // profiles (shared directory)
     fm.onSnapshot(fm.collection(db,'profiles'),snap=>{liveProfiles=snap.docs.map(d=>({uid:d.id,...d.data()}));if($('linked').classList.contains('active'))runSearch($('c-search').value.trim());const mp2=myProfile();if(mp2&&$('uav'))$('uav').innerHTML=mp2.photo?'<img src="'+mp2.photo+'" alt="">':initials(currentUserName)},err=>console.warn('profiles:',err));
     // auth
